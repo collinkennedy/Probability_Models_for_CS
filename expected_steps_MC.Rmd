@@ -1,0 +1,17 @@
+---
+title: "expected_time_state_i_to_j"
+author: "Collin"
+date: "10/13/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+
+
+
+
+
+```
+

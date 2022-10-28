@@ -1,0 +1,484 @@
+title: "die_game_markov_chain"
+---
+author: "Collin"
+date: "10/6/2022"
+output: html_document
+---
+
+```{r}
+#Die Game: Example of Markov Chains
+#One repeatedly rolls a die, keeping a running total. Each time the total exceeds 10, we receive one dollars, and continue play
+#resuming where we left off, mod 10. ie, we have a total of 6, and we roll a 6. we receive a dollar, and start back at 2.
+#Assume the player starts with 1 point
+
+#code to obtain the transition matrix P. this game can be modeled with a discrete markov chain because the markov/memoryless property exists - > the future state (what you'll have after you roll) only depends on the current state (the total you currently have)
+library(tidyverse)
+library(LaplacesDemon) #for categorical distribtion
+P = matrix(rep(0,100), nrow = 10) #initialize empty transition matrix
+for(i in 1:10){ #loop over each row of the transition matrix
+  
+  #for the ith row, there are only 1-6 different possible outcomes from the dice roll
+  for(j in 1:6){
+    k = i + j
+    if(k>10){
+      k = k - 10
+      P[i,k] = 1/6
+    }
+    
+    
+  }
+  
+}
+
+```
+
+```{r}
+# is pi^T(I - P) = (I - P^T)pi ?
+k = 3
+pi_vector = matrix(c(.34,.43,.23))
+
+Identity = diag(k)
+
+P = matrix(c(.5,0,.5,
+             .25,.5,.25,
+             1,0,0), nrow = 3,byrow = TRUE)
+Identity - P
+
+
+#test for equality
+t(pi_vector)%*%(Identity - P)
+(Identity - t(P))%*%pi_vector
+
+zero_vec = c(0,0,1)
+A = (Identity - t(P))
+
+A
+
+solve(A, zero_vec)
+
+A_with_O =  A
+A_with_O[3,] = c(1,1,1) #replacing the last row of A with 1s (O vector)
+new_zero_vector = c(0,0,1)
+solve(A_with_O, new_zero_vector)
+
+```
+
+
+
+```{r}
+#function to solve system of linear equations (markov chain) for pi
+
+find_pi = function(p){
+  n = nrow(p)
+  imp = diag(n) - t(p) #This is I - P^T
+  
+  imp[n,] = rep(1,n) #replace last row of I-P^T matrix with ones to make it invertible
+  rhs = c(rep(0,n-1),1)
+  
+  (solve(imp,rhs)) #
+  
+}
+
+
+
+#use this one
+alt_find_pi = function(p,k){
+  niters = ceiling(log2(k))
+  prd = p
+  
+  #calculate actual pi values
+  actual_pis = find_pi(p)
+  row1_error_vec = numeric(niters)
+  row_average_error_vec = numeric(niters)
+  
+  for(i in 1:niters){
+    prd = prd %*% prd
+    
+    #calculate the error at this iteration and append to a vector
+    
+    #error using row 1
+    row1_error = sum(abs(prd[1,] - actual_pis))
+    row1_error_vec[i] = row1_error #append
+    
+    
+    #error averaging over the rows (colMeans)
+    average_error = sum(abs(colMeans(prd) - actual_pis))
+    row_average_error_vec[i] = average_error
+  }
+  return_list = list(actual_pis, row1_error_vec,row_average_error_vec)
+  names(return_list) = c("actual_pis",
+                         "row1_error_vector",
+                         "row_average_error_vector")
+  return(return_list)
+  
+
+}
+
+
+```
+
+
+
+```{r}
+#3 heads in a row game: example
+transition_matrix = matrix(rep(0,9), nrow = 3)
+transition_matrix[1,1] = .5
+transition_matrix[1,2] = .5
+transition_matrix[2,1] = .5
+transition_matrix[3,1] = 1
+transition_matrix[2,3] = .5
+
+transition_matrix
+find_pi(transition_matrix)
+```
+
+
+
+```{r}
+#Markov Chain Simulation: Hw2 problem 1
+#create the transition matrix:
+
+P = matrix(c(.5,.5,0,0,
+             .5,0,.5,0,
+             .5,0,0,.5,
+             1,0,0,0), byrow = TRUE, nrow = 4)
+
+P
+
+#first, we can solve the system of linear equations directly: pi P = pi using the find_pi function defined previously
+find_pi(P) 
+
+#now lets see if we can reproduce these results by raising P to a very large power 
+find_pi_power(P,k = 30)
+
+
+P_squared = P%*%P
+
+P_cubed = P_squared %*% P
+pis = find_pi(P)
+
+sum(abs(colMeans(P_cubed) - pis))
+
+
+
+P_other_cubed = P %*% P %*% P
+
+sum(abs(colMeans(P_other_cubed) - pis))
+
+
+
+```
+
+```{r}
+#plot
+
+```
+
+
+```{r}
+#Example using John's transition matrix 
+#3x3
+
+P <- matrix(c( 0.7, 0.2, 0.1, 
+                 0.4, 0.6,   0, 
+                 0,   1,   0  ), nrow=3, ncol=3,byrow = TRUE)
+
+find_pi_power_out = alt_find_pi(P, k = 100)
+find_pi_power_df = data.frame(n_iters = 1:length(find_pi_power_out$row_average_error_vector),
+                              row1_error = find_pi_power_out$row1_error_vector,
+                              row_average_error = find_pi_power_out$row_average_error_vector
+                              ) %>% 
+  pivot_longer(!n_iters,names_to = "error_type", values_to = "error")
+  
+
+#plot
+ggplot(data = find_pi_power_df, mapping = aes(x = n_iters, y = error))+
+  geom_smooth(mapping = aes(x = n_iters, y = error, color = error_type), se = FALSE)+
+  scale_x_continuous(breaks = seq(1, length(find_pi_power_df$n_iters), by = 1))+
+  ggtitle("Kth Step Transition Matrix Error - 3x3 Transition Matrix", subtitle = str_glue("K = {value}", value = max(find_pi_power_df$n_iters)))+
+  xlab("# Iterations")+
+  ylab("Error")+
+    theme_minimal()+
+  theme(plot.title = element_text(size = 16, face = "bold"))
+
+
+#make this a function
+
+```
+
+
+```{r}
+set.seed(2022)
+#transition matrix generator
+gen_matrix = function(dimension){
+  #first create the empty matrix (all zeros)
+  generated_matrix = matrix(0, nrow = dimension, ncol = dimension)
+  
+  
+  #generate random numbers in a vector of length n, then normalize and assign to the ith row of the matrix
+  for(i in 1:dimension){
+    #generate the numbers
+    rnum = sample(c(20,50,2345,3453,2323,1232),1)
+    random_vec = runif(dimension, max = rnum)
+    
+    #normalize
+    random_vec_normalized = random_vec/sum(random_vec)
+   
+    #assign to the ith row of the matrix
+    generated_matrix[i,] = random_vec_normalized
+  }
+  return(generated_matrix)
+}
+
+transition_matrix_50 = gen_matrix(50) #create a 50x50 transition matrix
+
+find_pi_power_out = alt_find_pi(transition_matrix_50,k = 100)
+find_pi_power_df = data.frame(n_iters = 1:length(find_pi_power_out$row_average_error_vector),
+                              row1_error = find_pi_power_out$row1_error_vector,
+                              row_average_error = find_pi_power_out$row_average_error_vector
+                              ) %>% 
+  pivot_longer(!n_iters,names_to = "error_type", values_to = "error")
+  
+
+#plot
+ggplot(data = find_pi_power_df, mapping = aes(x = n_iters, y = error))+
+  geom_smooth(mapping = aes(x = n_iters, y = error, color = error_type), se = FALSE)+
+  scale_x_continuous(breaks = seq(1, length(find_pi_power_df$n_iters), by = 1))+
+  ggtitle(str_glue("Kth Step Transition Matrix Error - 50 x50 Transition Matrix"), subtitle = str_glue("K = {value}", value = max(find_pi_power_df$n_iters)))+
+  xlab("# Iterations")+
+  ylab("Error")+
+    theme_minimal()+
+  theme(plot.title = element_text(size = 16, face = "bold"))
+
+
+find_pi_power_df
+
+
+```
+
+
+```{r}
+#3 ALOHA model with 3 nodes, markov chain model
+q = .3
+p = .4
+
+#row 1 of the transition matrix 9 (i=0)
+p00 = (1-q)^3 + 3*q*p*(1-q)^2
+p01 = 3*q*(1-q)^2*(1-p) + 6*q^2*p*(1-q)*(1-p)
+
+p02 = 3*q^2*(1-q)*p^2 + 3*q^2*(1-q)*(1-p)^2 + 3*q^3*p*(1-p)^2
+
+p03 = q^3*(1-p)^3 + q^3*p^3 + 3*q^3*p^2*(1-p)
+
+row1 = c(p00,p01,p02,p03)
+
+
+#row 2 of the transition matrix (i = 1)
+p10 = p*(1-q)^2
+p11 = (1-q)^2*(1-p) + 4*q*p*(1-q)*(1-p)
+p12 = 2*q*(1-q)*(1-p)^2 + 2*q*(1-q)*p^2 + 3*q^2*p*(1-p)^2
+p13 = q^2*(1-p)^3 + 3*q^2*p^2*(1-p) + q^2*p^3
+
+
+
+row2 = c(p10,p11,p12,p13)
+
+
+#row 3 of the transition matrix (i= 2)
+p20 = 0
+p21 = 2*(1-q)*p*(1-p)
+p22 = 3*q*p*(1-p)^2 + (1-q)*(1-p)^2 + (1-q)*p^2
+p23 = q*(1-p)^3 + 3*q*p^2*(1-p) + q*p^3
+
+
+
+row3 = c(p20,p21,p22,p23)
+
+
+
+#row 4 of the transition matrix (i = 3)
+p30 = 0
+p31 = 0
+p32 = 3*p*(1-p)^2
+p33 = (1-p)^3 + p^3 + 3*p^2*(1-p)
+row4 = c(p30,p31, p32,p33)
+sum(row4)
+
+#putting it all together into the transition matrix
+aloha_P = matrix(c(row1,
+             row2,
+             row3,
+             row4), byrow = TRUE, nrow = 4,ncol = 4)
+#find pi
+
+aloha_pi = find_pi(aloha_P)
+
+print(str_glue("Pi Vector: \npi_1 = {pi1} \npi_2 = {pi2} \npi_3 = {pi3}, \npi_4 = {pi4}", pi1 = aloha_pi[1],
+               pi2 = aloha_pi[2],
+               pi3 = aloha_pi[3],
+               pi4 = aloha_pi[4]))
+a
+
+ #when q = .3, p = .6 about 18% of the epochs 0 active nodes
+#about 24% of the epochs will have 1 active node
+#about 30% of the epochs will have 2 active nodes
+#about 28% will have 3 active nodes
+
+#What is the long-run average time between collisions
+#Use LOTP to get P(collision): P(C) = sum(i = 0 to 3) P(collision | state = i)
+#Then do 1/P(Collision) to get average time (epochs) between collisions
+
+p_coll_state0 = 3*q^2*(1-q)*p^2 + q^3*p^3 + 3*q^3*p^2*(1-p)
+p_coll_state1 = 2*q*(1-q)*p^2 +  3*q^2*p^2*(1-p) + q^2*p^3
+p_coll_state2 = (1-q)*p^2 + 3*q*p^2*(1-p) + q*p^3
+p_coll_state3 = p^3 + 3*p^2*(1-p)
+p_coll_state_i = c(p_coll_state0,p_coll_state1, p_coll_state2, p_coll_state3)
+
+prob_collision = sum(aloha_pi*p_coll_state_i)
+
+print(str_glue("Average time between collisions, assuming p = {p}, q = {q}: {time}",
+               p = p, q = q, time = 1/prob_collision))
+
+```
+
+
+#Find Eta function
+```{r}
+#eta = E(T_in), average time to go from state i to state n
+find_eta = function(transition_matrix){
+  n = nrow(transition_matrix)
+  q = diag(n) - transition_matrix
+  
+  q = q[1:(n-1), 1:(n-1)]
+  ones = rep(1,n-1)
+  solve(q,ones)
+}
+
+
+```
+
+
+
+```{r}
+
+
+expected_time = function(P){
+  n = nrow(P) #dimensions of the transition matrix
+  ones_vec = rep(1,n-1)
+  
+  ET_ij_matrix = matrix(0,n^2, nrow = n, ncol = n)
+  
+  for(j in 1:n){ #loop over state space
+    imp = diag(n-1) - P[-j,-j] #I - A from my derivation
+    
+    expectations_not_incl_j = solve(imp,ones_vec) #this is E(T_1j), E(T_2j), ... E(T_j-1,j), E(T_j+1,j)...E(T_nj)
+    #now just need the last E(Tij), which is when i= j
+    
+    
+    E_ii = 1 + sum(P[-j,j]*expectations_not_incl_j) #Franklin if you switch which j is negative you'll see what I was talking about
+    
+    #use append and after = j-1
+    expectations_inc_j = append(expectations_not_incl_j,E_ii,after = j-1)
+    
+    #add this to the ET_ij_matrix
+    ET_ij_matrix[,j] = expectations_inc_j
+    
+  }
+  return(ET_ij_matrix)
+  
+}
+
+
+
+
+generateTransitionMatrix <- function(numberRows){
+  set.seed(1)
+  transitionMatrix <- matrix(nrow=numberRows,ncol=numberRows)
+  for (row in 1:numberRows){
+    x <- runif(numberRows)
+    rowValues <- x/sum(x)
+    transitionMatrix[row,] <- rowValues
+  }
+  transitionMatrix
+}
+
+set.seed(1)
+transitionMatrix <- generateTransitionMatrix(n)
+expected_time(transitionMatrix)
+
+```
+
+
+
+
+```{r}
+n = 3
+P <- generateTransitionMatrix(n)
+ones_vec = rep(1,n-1)
+  
+ET_ij_matrix = matrix(0,n^2, nrow = n, ncol = n)
+  
+for(j in 1:n){ #loop over state space
+    imp = diag(n-1) - P[-j,-j] #I - A from my derivation
+    
+    expectations_not_incl_j = solve(imp,ones_vec) #this is E(T_1j), E(T_2j), ... E(T_j-1,j), E(T_j+1,j)...E(T_nj)
+    #now just need the last E(Tij), which is when i= j
+    
+    E_ii = 1 + sum(P[-j,j]*expectations_not_incl_j)
+    
+    #use append and after = j-1
+    expectations_inc_j = append(expectations_not_incl_j,E_ii,after = j-1)
+    
+    #add this to the ET_ij_matrix
+    ET_ij_matrix[,j] = expectations_inc_j
+}
+
+
+
+#expectations_not_incl_j should be n-1 length
+#expectations_incl_j should be length n
+
+
+
+#test: try j = 2
+j = 2
+imp = diag(n-1) - P[-j,-j] #2x2 like it should be
+P[-j,2]
+
+expectations_not_incl_j = solve(imp,ones_vec)
+expectations_not_incl_j #vector of length n-1, GOOD, this is the average time to get from state 1 to state 2, and state 3 to state 2. This does NOT include average time to get from state 2 to state 2
+E_ii = 1 + sum(P[-j,j]*expectations_not_incl_j) #this will give us average time to get from state 2 to state 2
+expectations_inc_j = append(expectations_not_incl_j,E_ii,after = j-1)
+expectations_inc_j
+
+ET_ij_matrix[,j] = expectations_inc_j
+ET_ij_matrix
+
+
+```
+
+
+```{r}
+P[,2]
+
+```
+
+
+
+```{r}
+
+test_P = matrix(c(.25,.5,.25,
+                  .5,.25,.25,
+                  .25,.25,.5), byrow = TRUE, nrow = 3, ncol = 3)
+
+find_eta(test_P)
+
+test_pi = find_pi(test_P)
+test_pi
+diag(nrow(P)) - P
+
+diag(nrow(P))
+
+```
+
+
