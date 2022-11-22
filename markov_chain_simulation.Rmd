@@ -118,6 +118,88 @@ alt_find_pi = function(p,k){
 ```
 
 
+#Find Pi (Continuous Markov Chain)
+```{r}
+find_pi_cont = function(q){
+  n = nrow(q)
+  q[n,] = rep(1,n)
+  rhs = c(rep(0,n-1),1)
+  pi_vec = solve(q,rhs) #solve for pi
+  return(pi_vec)
+}
+
+```
+
+# CTMC Example: Machine Repair
+```{r}
+Q = matrix(c(-.125, .05, 0,
+             .25, -.175, .08,
+             0, .125, -.08),
+           byrow = TRUE, nrow = 3, ncol = 3)
+
+find_pi_cont(Q)
+```
+
+
+```{r}
+g = 4
+for(i in 1:(g-1)){
+  print(i)
+}
+
+```
+
+
+```{r}
+var_time = function(g){
+  #g is the number of nodes on the network
+  var_i_to_i_plus_1_vec = numeric(g-1)
+  
+  for(i in 1:(g-1)){
+    #calculate the mean holding time at state i (This is the mean time to go from state i to i+1)
+    var_i_to_i_plus_1 = 1/(i*(g-i))^2  #1/lambda^2
+    var_i_to_i_plus_1_vec[i] = var_i_to_i_plus_1 #append to the vector,
+    
+  }
+  
+  return(sum(var_i_to_i_plus_1_vec))
+  
+  
+}
+
+#test
+var_time(10)
+
+
+```
+
+```{r}
+
+
+varTimeToAbsorb <- function(g){
+  #calculate the mean time, will need it squared for final variance calculation
+  expected_time_to_absorb = mean_time(g)
+  
+  #calculate the second moment...
+  
+  
+  
+}
+
+print(varTimeToAbsorb(10))
+
+
+```
+
+
+
+```{r}
+
+length(seq(-33,57,5))
+
+
+```
+
 
 ```{r}
 #3 heads in a row game: example
@@ -317,7 +399,7 @@ print(str_glue("Pi Vector: \npi_1 = {pi1} \npi_2 = {pi2} \npi_3 = {pi3}, \npi_4 
                pi2 = aloha_pi[2],
                pi3 = aloha_pi[3],
                pi4 = aloha_pi[4]))
-a
+
 
  #when q = .3, p = .6 about 18% of the epochs 0 active nodes
 #about 24% of the epochs will have 1 active node
@@ -366,21 +448,28 @@ expected_time = function(P){
   n = nrow(P) #dimensions of the transition matrix
   ones_vec = rep(1,n-1)
   
-  ET_ij_matrix = matrix(0,n^2, nrow = n, ncol = n)
+  ET_ij_matrix = matrix(0,n^2, nrow = n, ncol = n) #create the nxn matrix that will contain all of the expected times
   
   for(j in 1:n){ #loop over state space
+    #for each iteration of this loop, I solve the system of linear equations (I - A)E = 1 for E
+    
+    #(I - A)
     imp = diag(n-1) - P[-j,-j] #I - A from my derivation
     
+    
+    #solving this system of linear equations will return an n-1 dimensional vector, containing
+    #the expected times to get from state every state i to the jth state (the iteration of the for loop we're on)
     expectations_not_incl_j = solve(imp,ones_vec) #this is E(T_1j), E(T_2j), ... E(T_j-1,j), E(T_j+1,j)...E(T_nj)
     #now just need the last E(Tij), which is when i= j
     
     
-    E_ii = 1 + sum(P[-j,j]*expectations_not_incl_j) #Franklin if you switch which j is negative you'll see what I was talking about
+    #this will give us the one expectation that we have to calculate directly
+    E_ii = 1 + sum(P[j,-j]*expectations_not_incl_j) 
     
     #use append and after = j-1
     expectations_inc_j = append(expectations_not_incl_j,E_ii,after = j-1)
     
-    #add this to the ET_ij_matrix
+    #add this to the ET_ij_matrix, populate it with all the expected times to go from state i to state j
     ET_ij_matrix[,j] = expectations_inc_j
     
   }
@@ -408,6 +497,15 @@ expected_time(transitionMatrix)
 
 ```
 
+```{r}
+
+
+P[-1,1]
+```
+```{r}
+
+P
+```
 
 
 
@@ -458,27 +556,599 @@ ET_ij_matrix
 ```
 
 
+# Advice Nurse Problem: CTMC Simulation
+
+## functions
+### convert_tuple
 ```{r}
-P[,2]
+convert_tuple = function(N,k,m){
+  integer_state = N*(m+1) + (k+1)
+
+  return(integer_state)
+}
+
+convert_tuple(3,4,4)
+
+```
+
+### generate lambdas
+```{r}
+lambda_gen = function(isl){
+  #isl -> integer states list
+  # N is the number of nurses currently active
+  #k is the number of people currently in the waiting room
+  #n is total number of available nurses
+  #m is the maximum capacity of the waiting room
+  #mu is average call time so 1/mu is the rate at which a call ends
+  # v is average intercall arrival time, so 1/v is the rate at which a new call arrives
+  # p is the probability a new nurse is successfully added
+  
+  
+  #other parameterization: function(integer_states_list) #integer_states_list is a vector of tuples (vectors) so the one
+      #pass as argument here would be the jth element of integer_states_list, which will be a tuple, of which the first element
+      #is N and the second element is k
+  #N = integer_states_list[1]
+  #k = integer_states_list[2]
+  #n,m,mu,v will be variables coming from Q_gen(), so they'll be like global variables to lambda_gen.
+  
+  N = isl[1]
+  k = isl[2]
+ 
+  lambda_j = 0
+  if(N == 0 & k < m){ #N = 0, k < m. no nurses and need the waiting room to fill up
+    lambda_j = 1/v
+    #print("a")
+  }
+  
+  else if(N == 0 & k == m){ # N = 0, k = m. no nurses and the waiting room is full
+    lambda_j = (1/v)*p
+    #print("b")
+  }
+  
+  else if((N >=1 & N <= n) & k < m){ # between 1 and n (inclusive ) nurses currently active, and waiting room is not full
+    lambda_j = N/mu + 1/v
+    #print("c")
+      
+  }
+  
+  else if((N >=1 & N < n) & k == m){ # 1 to n-1 nurses active, and waiting room is full
+    lambda_j = N/mu + (1/v)*p
+    #print("d")
+  }
+  
+  #if(N == n & k < m){ #maximum number of nurses are active, waiting room is not full
+   # lambda_j = n/mu + 1/v
+   # print("e")
+ # }
+  
+  if(N == n & k == m){ #maximum number of nurses are active and waiting room IS FULL
+    lambda_j = n/mu
+    #print("f")
+    
+  }
+  return(lambda_j)
+}
+
+```
+
+```{r}
 
 ```
 
 
+```{r}
+
+
+```
+
+### generate transition probabilities
+```{r}
+
+integer_states_list = list(
+  c(0,0), #1
+  c(0,1), #2
+  c(0,2), #3
+  c(0,3), #4
+  c(0,4), #5
+  c(1,0), #6
+  c(1,1), #7
+  c(1,2), #8
+  c(1,3), #9
+  c(1,4), #10
+  c(2,0), #11
+  c(2,1), #12
+  c(2,2), #13
+  c(2,3), #14
+  c(2,4), #15
+  c(3,0), #16
+  c(3,1), #17
+  c(3,2), #18
+  c(3,3), #19
+  c(3,4) #20
+)
+
+
+mu = 2
+v = 5
+n = 3
+m = 4
+p = .9
+
+#mu, n, v and p need to be defined globally for the function to work
+lambda_C = 1/mu
+lambda_I = 1/v 
+tp_gen = function(jth_state, ith_state){
+  #jth_state is the [[jth]] element of integer_states_list, and #ith_state is the [[ith]] element of integer_states_list
+  
+  #unpack the N's and K's
+  jth_N = jth_state[1]
+  jth_k = jth_state[2]
+  ith_N = ith_state[1]
+  ith_k = ith_state[2]
+  
+  p_ji = 0 #this is what we will be returning. This function is called inside of Q_gen
+  
+  if(jth_N == 0 & jth_k <= m){ #transition probabilities when 0 nurses are active
+    if(ith_k == jth_k + 1 & ith_N == 0){ 
+       p_ji = 1
+      # print("ay yo")
+    }else{
+      p_ji = 0
+    }
+  }
+  
+  if((jth_N >=1 & jth_N <= n) & jth_k == 0){ #between 1 and n nurses active, 0 people in the waiting room
+    
+    if( jth_N == ith_N + 1 & jth_k == 0 & ith_k == 0){ # call ends and a nurse is removed
+      p_ji = (jth_N*(lambda_C))/(jth_N*lambda_C + lambda_I)
+      #print("Xd")
+      
+    }else if(jth_N == ith_N & ith_k == 1){ #call arrives
+      p_ji = lambda_I / (jth_N*lambda_C + lambda_I)
+    # print("HHFHDH")
+    }else{
+      p_ji = 0
+     # print("here")
+    }
+    
+  }
+  
+  if((jth_N >=1 & jth_N <= n) & jth_k < m & jth_k > 0){
+    if(jth_N == ith_N & jth_k == ith_k + 1){ #call ends and waiting room isnt full
+      p_ji = jth_N*lambda_C / (jth_N*lambda_C + lambda_I)
+      #print("uwu")
+      
+    }else if(jth_N == ith_N & jth_k == ith_k - 1){ #call arrives and waiting room isn't full
+      p_ji = lambda_I / (jth_N*lambda_C + lambda_I)
+     # print("hm")
+    }else{
+      p_ji = 0
+     # print("PLESE")
+    }
+  }
+  
+  if((jth_N >=0 & jth_N < n) & jth_k == m){ #waiting room full
+    if (ith_N == jth_N + 1 & jth_k == m & ith_k == m){
+      p_ji = lambda_I*p/(jth_N*lambda_C + lambda_I*p) #person arrives when the waiting room is full
+     # print("wtf")
+      
+    }else if(jth_N == ith_N & jth_k == m & ith_k == m-1){
+      p_ji = jth_N*lambda_C / (jth_N*lambda_C + lambda_I*p) #call ends and person leaves the waiting room when it was full
+     # print("lmao")
+    } else{
+      p_ji = 0
+    }
+  }
+  
+  if( (jth_N == n & jth_k == m) & (ith_N == n & ith_k == m-1)){
+    p_ji = 1 #the only way to go from state (n,m) to anywhere else is to n,m-1 and ithappens with probability 1
+    #print("yup")
+  }
+  
+  return(p_ji)
+}
+
+tp_gen(integer_states_list[[20]], integer_states_list[[3]])
+
+```
+
+### generate integer_state_list
+```{r}
+#another function that will be called inside of Q_gen
+create_integer_state_list = function(n,m){
+  integer_state = vector("list", (n+1)*(m+1))
+iter = 1
+for(N in 0:n){
+  for(k in 0:m){
+    integer_state[[iter]] = c(N,k)
+    iter = iter + 1
+  }
+}
+return(integer_state)
+
+}
+
+
+test_list = create_integer_state_list(3,4)
+test_lambda_j = test_list[[2]][1]# second elemnt of this list is a vector (tuple state). need the first element
+test_list
+```
+
+
+
+### test generate_lambda
+```{r}
+
+mu = 2
+v = 5
+lambda_gen(test_list[[4]]) #corresponding state (0,1). What is the rate you leave this state? -> .2
+
+tp_gen(test_list[[4]],test_list[[5]])
+```
+
+
+### generate Q matrix
+```{r}
+Q_gen = function(n,m,p,mu,v){
+  
+  #define useful parameters:
+  lambda_C = 1/mu
+  lambda_I = 1/v
+  dim = (n+1)*(m+1)
+  
+  Q = matrix(dim^2, nrow = dim, ncol = dim)
+  
+  integer_state_list = create_integer_state_list(n,m)
+  
+  for(i in 1:dim){
+    for(j in 1:dim){
+      lambda_j = lambda_gen(integer_state_list[[j]]) #the rate at which we leave state j
+      p_ji = tp_gen(integer_state_list[[j]], integer_state_list[[i]])
+      
+      if(i == j){ #diagonals
+        Q[i,j] = -lambda_j
+        
+      }else{
+        Q[i,j] = lambda_j*p_ji
+      }
+    }
+  }
+  
+ return(Q)
+}
+
+
+```
+
+
+```{r}
+test_Q = Q_gen(3,4,.9,2,5)
+test_Q
+
+```
 
 ```{r}
 
-test_P = matrix(c(.25,.5,.25,
-                  .5,.25,.25,
-                  .25,.25,.5), byrow = TRUE, nrow = 3, ncol = 3)
+lambda_gen(test_list[[6]]) #corresponding state (0,1). What is the rate you leave this state? -> .2
 
-find_eta(test_P)
+tp_gen(test_list[[2]],test_list[[13]])
+test_list
+```
 
-test_pi = find_pi(test_P)
+```{r}
+find_pi_cont(test_Q)
+test_pi = find_pi_cont(test_Q)
 test_pi
-diag(nrow(P)) - P
+```
 
-diag(nrow(P))
+
+## FUNCTIONS FOR CRITERIA OF INTEREST
+### Proportion of Calls Rejected/Proportion of Time Nurses are Not Successfully Added
+```{r}
+prop_calls_rejected= function(pi_cont, n,m,p){
+  #pi_cont is the vector of stationary probabilities for the CTMC
+  #n is the number of nurses
+  #m is the max number of the waiting room
+  #p is the success probability of a nurse being successfully added to the system
+  
+  dim = (n+1)*(m+1)
+  prop = 0
+  for(j in 1:length(pi_cont)){
+    if((j %% (m+1) == 0 & j != dim)){
+      prop = prop + pi_cont[j]*(1-p)
+      
+    }else if(j == dim ){
+      prop = prop + pi_cont[j]
+      
+    }else{
+      next
+    }
+    
+  }
+  return(prop)
+
+}
+prop_calls_rejected(pi_cont = test_pi, n = 3,m=4,p=.9)
+
 
 ```
+
+### Mean Number of Nurses Active (Patients talking to Nurse)
+```{r}
+
+mean_nurses = function(pi_cont,n,m){
+  isl = create_integer_state_list(n,m) #will allow me to get N at each iteration 
+  
+  mean_number_nurses = 0
+  for(j in 1:length(pi_cont)){
+    #get value of N from jth state
+    N = isl[[j]][1]
+    mean_number_nurses = mean_number_nurses + pi_cont[j]*N
+  }
+  return(mean_number_nurses)
+}
+
+mean_nurses(test_pi,n = 3,m = 4)
+
+```
+
+
+### Mean Number of Patients in Waiting Room
+```{r}
+mean_patients_in_wr = function(pi_cont,n,m){
+  isl = create_integer_state_list(n,m) #will allow me to get K at each iteration 
+  
+  mpwr = 0
+  for(j in 1:length(pi_cont)){
+    #get value of K from jth state
+    K = isl[[j]][2]
+    mpwr = mpwr + pi_cont[j]*K
+  }
+  return(mpwr)
+}
+
+mean_patients_in_wr(test_pi,n = 3,m = 4)
+
+```
+
+
+### Mean Number of Patients in the System
+```{r}
+#T = {total number of patients in the advice nurse system}
+#E[T] = E(N) + E[K] , where N is number of active nurses (and effectively number of patients talking to nurses) and
+#K is number of patients in the waiting room
+
+mean_patients = function(pi_cont,n,m){
+  mp = mean_patients_in_wr(pi_cont,n,m) + mean_nurses(pi_cont,n,m)
+  return(mp)
+}
+
+mean_patients(test_pi,n = 3, m = 4)
+
+
+```
+
+### Mean Max Expected Waiting Time
+
+This metric quantifies how long (on average) one must wait in the waiting room in the worst case scenario. ie, if you are in state (1,3), you have to wait on average 3/Nlambda_c.
+
+It is slightly more complicated when you enter the waiting room when no nurses are currently active. ie, say you are in state (0,2). you need for the room to fill up ( at mean time 1/lambda_I) m-k times (so in our common example, this would be 4-2, or 2 more people), and then you would have to consider the mean time to go to (1,4) from (0,4) which is 1/(lambda_i*p), and ONLY THEN do you start taking into consideration the mean time for calls to start ending, which would be (k-1) times 1/lambda_C
+```{r}
+expected_max_waiting_time = function(pi_cont,n,m,v,mu,p){
+  #get integer state list for single state to tuple state conversion
+  isl = create_integer_state_list(n,m)
+  mewt = 0
+  
+  for(j in 1:length(pi_cont)){
+    N = isl[[j]][1]
+    k = isl[[j]][2]
+    
+    if(N == 0 & k == 0){  #should be zero but already is so skip this iteration
+      next
+    }
+    else if(N == 0 & k != 0){
+      mewt = mewt + pi_cont[j]*(v*(m - k) + v/p + (k-1)*mu)
+    }
+    else{
+      mewt = mewt + pi_cont[j]*(k*mu)/N
+    }
+    
+  }
+  return(mewt)
+  
+}
+
+expected_max_waiting_time(test_pi,n = 3, m = 4, v = 5, mu = 2, p = .9)
+
+
+
+```
+
+
+### Mean Waiting Time
+```{r}
+mean_waiting_time = function(pi_cont,n,m,v){
+  lambda = 1/v #rate of new arrivals into the system
+  
+  mp = mean_patients(pi_cont,n,m) #mean number of patients
+  
+  return(mp/lambda)
+  
+}
+mean_waiting_time(test_pi, n = 3, m= 4, v = 5)
+
+#SEe if this equals E(waiting room time) + E(call time)
+
+
+
+```
+
+
+
+```{r}
+library(tidyverse)
+c1 = c("1","2","3")
+c2 = c("big","stupid","head")
+
+out = crossing(c1,c2)
+out
+
+xy.list <- as.list(as.data.frame(t(out)))
+
+
+```
+
+
+
+
+
+### Score Calculator
+```{r}
+
+calculate_score = function(weights = c(1/4,1/4,1/4,1/4), mu, v, n, m, p){
+  #vector of weights should be a 3 element vector with weights that sum to 1
+  #weights should be in following order: (mean patients in waiting room, mean patients in system, mean number of nurses active)
+  #default to (1/3,1/3, 1/3)
+  
+  #Cost = w1(mean_patients_in_waiting_room) + w2(prop_calls_rejected) + w3(mean_number_of_nurses_active)
+  
+  #mu is the mean call duration time
+  #v is the mean intercall arrival time
+  #n is number of nurses
+  #m is max capacity of waiting room
+  #p is success probability of a nurse being added when waiting room is full
+  
+  
+  #get Q matrix
+  Q = Q_gen(n = n, m = m, p = p, mu = mu, v = v)
+  
+  #get stationary probabilities (pi vector)
+  pi_vector = find_pi_cont(Q)
+  
+  #get the score
+  score = weights[1]*mean_patients_in_wr(pi_vector,n = n, m = m) + weights[2]*prop_calls_rejected(pi_vector, n, m,p) + weights[3]*mean_nurses(pi_vector, n,m) + weights[4]*expected_max_waiting_time(pi_vector,n = n, m = m, v = v, mu = mu, p = p)
+  
+  #should return a vector of the total score, and then each of the four components
+  return(c(score,
+           mean_patients_in_wr(pi_vector,n = n, m = m), #average number of patients in the waiting room
+           prop_calls_rejected(pi_vector, n, m,p), # proportion of calls rejected
+           mean_nurses(pi_vector, n,m), #average number of nurses active
+           expected_max_waiting_time(pi_vector,n = n, m = m, v = v, mu = mu, p = p) #worst-case average waiting time
+           ))
+}
+
+calculate_score(mu = 2, v = 5, n = n_test, m = m_test, p = p_test)
+
+
+
+```
+
+
+
+## Simulate Markov Chain function
+```{r}
+library(tidyverse)
+
+
+n_test = c(3)
+m_test = c(4)
+p_test = c(.9)
+simulate_MC = function(mu,v,n_vector, m_vector, p_vector){
+  
+
+  
+  
+  #create an empty dataframe that will store all of the scores and their respective parameterizations
+  scores_df = data.frame(score = numeric(),interarrival_rate = numeric(), call_duration_rate = numeric(),
+                         avg_pwr = numeric(),
+                         prop_cr = numeric(),
+                         avg_nurses_active = numeric(),
+                         worst_case_mean_wait_time = numeric(),
+                         n = numeric(), m =numeric(), p = numeric())
+  
+  
+  
+  #n_vector, m_vector, and p_vector are vectors containing all the different n,m, and p parameteriziations we want to ssearch over #essentially to see the behavior of the markov chain and see if there is a specific parameterization that minimizes our cost #function
+  
+  #listify n_vector, m_vector, p_vector into a list, where each element is a 3 element vector containing an n,m,p
+  out = crossing(n_vector,m_vector,p_vector)
+  parameter_list = as.list(as.data.frame(t(out)))
+  
+  
+  #track the current minimum score
+  curr_min_score = 0
+  
+  #loop over the values of the list
+  for(i in 1:length(parameter_list)){
+    #get the parameters for the current iteration
+    n_i = parameter_list[[i]][1]
+    m_i = parameter_list[[i]][2]
+    p_i = parameter_list[[i]][3]
+    
+    #calculate the score for this iterations parameterization
+    score_i = calculate_score(mu = mu, v = v, n = n_i, m = m_i, p = p_i)
+    
+    #append the score and its respective parameters to the dataframe that will contain all of them
+    scores_df = scores_df %>% 
+      add_row(score = score_i[1], interarrival_rate = 1/v, call_duration_rate = 1/mu, 
+              avg_pwr = score_i[2],
+              prop_cr = score_i[3],
+              avg_nurses_active = score_i[4],
+              worst_case_mean_wait_time = score_i[5],
+              n = n_i, m = m_i, p = p_i)
+    
+    #check if this score is the new minimum, if so, update it
+    if(score_i[1] < curr_min_score | i == 1){
+      curr_min_score = score_i[1]
+    }
+
+}
+    
+    #create a new column for the scores dataframe, and have it be an indicator of whether or not that paramterization (row) is
+    #the optimal one. Also normalize the score
+  scores_df = scores_df %>% 
+    mutate(minimizer = case_when(
+      score == curr_min_score ~ "yes",
+       TRUE ~ "no"
+      )) %>% 
+    mutate(score = score/sum(score))
+  
+  return(scores_df)
+    
+  
+}
+
+simulate_MC(mu = 2, v = 5, n_vector = n_test, m_vector = m_test, p_vector = p_test)
+
+```
+
+
+#How probability of successfully adding a nurse impacts key metrics
+```{r}
+
+#parameters
+n_test = c(3)
+m_test = c(4)
+p_test = seq(.10,1,.01)
+
+sim_out = simulate_MC(mu = 2, v = 5, n_vector = n_test, m_vector = m_test, p_vector = p_test)
+
+#plot of worst-case mean wait time against p
+ggplot(data = sim_out, mapping = aes(x = p, y = worst_case_mean_wait_time))+
+  geom_smooth(mapping = aes(x = p, y = worst_case_mean_wait_time),se = FALSE)+
+  ggtitle("Worst-Case Mean Wait Time & Proportion of Calls Rejected")+
+  ylab("Time in Waiting Room (Worst Case)")+
+  xlab("probability of sucessfully adding a nurse")+
+  theme_minimal()
+
+
+
+
+
+#plot of proportion of calls rejected against p
+```
+
+
+
 
 
